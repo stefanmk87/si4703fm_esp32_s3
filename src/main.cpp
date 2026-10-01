@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <SI470X.h>
 #include <TFT_eSPI.h>
+#include <TJpg_Decoder.h>
 #include <SPIFFS.h>
 #include <string.h>
 #include <time.h>
@@ -181,10 +182,46 @@ void drawSectionDivider(int y)
   tft.drawFastHLine(12, y, tft.width() - 24, TFT_DARKGREY);
 }
 
+bool bootJpegOutput(int16_t x, int16_t y, uint16_t width, uint16_t height, uint16_t *bitmap)
+{
+  if (y >= tft.height())
+    return false;
+
+  tft.pushImage(x, y, width, height, bitmap);
+  return true;
+}
+
+bool drawBootLogo()
+{
+  uint16_t imageWidth = 0;
+  uint16_t imageHeight = 0;
+  if (TJpgDec.getFsJpgSize(&imageWidth, &imageHeight, "/family.jpg", SPIFFS) != JDR_OK)
+    return false;
+
+  constexpr uint8_t imageScale = 2;
+  TJpgDec.setJpgScale(imageScale);
+  TJpgDec.setCallback(bootJpegOutput);
+  tft.setSwapBytes(true);
+
+  int scaledWidth = (imageWidth + imageScale - 1) / imageScale;
+  int scaledHeight = (imageHeight + imageScale - 1) / imageScale;
+  int x = (tft.width() - scaledWidth) / 2;
+  int y = (tft.height() - scaledHeight) / 2;
+  JRESULT result = TJpgDec.drawFsJpg(x, y, "/family.jpg", SPIFFS);
+
+  tft.setSwapBytes(false);
+  return result == JDR_OK;
+}
+
 void initializeRadioDisplay()
 {
   tft.init();
   tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  if (fileSystemReady && drawBootLogo())
+    delay(1800);
+
   tft.fillScreen(TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -729,18 +766,20 @@ void setup()
     Serial.begin(115200);
     while (!Serial) ;
 
+
+
   pinMode(SEEK_UP_BUTTON_PIN, INPUT_PULLUP);
   pinMode(SEEK_DOWN_BUTTON_PIN, INPUT_PULLUP);
 
+  fileSystemReady = SPIFFS.begin(true);
   initializeRadioDisplay();
 
     Serial.println("Иницијализација на I2C и SI470X...");
-    fileSystemReady = SPIFFS.begin(true);
     Serial.println(fileSystemReady ? "SPIFFS ready." : "SPIFFS mount failed.");
     Wire.setPins(ESP32_I2C_SDA, ESP32_I2C_SCL);
     
     rx.setup(RESET_PIN, ESP32_I2C_SDA);
-    rx.setVolume(14);
+    rx.setVolume(8);
 
     delay(500);
 
@@ -749,6 +788,8 @@ void setup()
     rx.setSeekThreshold(18);
     rx.setSpace(1);
     rx.setBand(0);
+    rx.setFmDeemphasis(1); // 50µs стандард за Европа / Македонија
+
 
     rx.getAllRegisters();
     uint16_t register06 = rx.getShadownRegister(0x06);
