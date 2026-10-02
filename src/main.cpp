@@ -18,6 +18,65 @@ long rds_elapsed = millis();
 SI470X rx;
 TFT_eSPI tft;
 
+// ---- Display themes (switchable "templates") ----
+constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b)
+{
+  return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+struct RadioTheme
+{
+  const char *name;
+  uint16_t background;
+  uint16_t frameAccent;
+  uint16_t titleText;
+  uint16_t divider;
+  uint16_t frequencyText;
+  uint16_t stationNameText;
+  uint16_t radioTextColor;
+  uint16_t rdsLabel;
+  uint16_t rdsValue;
+  uint16_t signalGood;
+  uint16_t signalMid;
+  uint16_t signalLow;
+  uint16_t signalOff;
+  uint16_t stereoOn;
+  uint16_t stereoOff;
+  bool isRetro;
+  bool dialShowLabels;
+};
+
+constexpr RadioTheme themeModern = {
+  "MODERN", TFT_BLACK, TFT_DARKGREY, TFT_WHITE, TFT_DARKGREY, TFT_GREEN,
+  TFT_MAGENTA, TFT_WHITE, TFT_CYAN, TFT_LIGHTGREY, TFT_GREEN, TFT_YELLOW,
+  TFT_ORANGE, TFT_DARKGREY, TFT_GREEN, TFT_YELLOW, false, false
+};
+
+constexpr RadioTheme themeRetro = {
+  "RETRO", TFT_BLACK, rgb565(120, 72, 16), rgb565(255, 191, 64),
+  rgb565(110, 60, 10), rgb565(255, 176, 0), rgb565(255, 221, 120),
+  rgb565(255, 196, 64), rgb565(255, 160, 40), rgb565(214, 150, 60),
+  rgb565(255, 176, 0), rgb565(255, 120, 0), rgb565(200, 40, 20),
+  rgb565(70, 40, 10), rgb565(255, 176, 0), rgb565(90, 60, 20), true, false
+};
+
+constexpr RadioTheme themeClassic = {
+  "CLASSIC", TFT_BLACK, rgb565(212, 175, 55), rgb565(255, 215, 0),
+  rgb565(120, 90, 40), rgb565(255, 200, 60), rgb565(255, 245, 220),
+  rgb565(230, 190, 120), rgb565(205, 127, 50), rgb565(200, 180, 140),
+  rgb565(0, 200, 120), rgb565(230, 180, 40), rgb565(200, 40, 30),
+  rgb565(60, 50, 30), rgb565(0, 200, 120), rgb565(90, 70, 40), true, true
+};
+
+enum DisplayThemeId : uint8_t { THEME_MODERN = 0, THEME_RETRO = 1, THEME_CLASSIC = 2 };
+const RadioTheme *const allThemes[3] = {&themeModern, &themeRetro, &themeClassic};
+uint8_t activeThemeIndex = THEME_RETRO;
+
+inline const RadioTheme &theme()
+{
+  return *allThemes[activeThemeIndex];
+}
+
 constexpr uint8_t SEEK_UP_BUTTON_PIN = 14;
 constexpr uint8_t SEEK_DOWN_BUTTON_PIN = 15;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 35;
@@ -81,14 +140,18 @@ unsigned long stereoCandidateSince = 0;
 
 void drawStationName(const char *stationName)
 {
-  tft.fillRect(8, 112, tft.width() - 16, 31, TFT_BLACK);
+  tft.fillRect(8, 112, tft.width() - 16, 31, theme().background);
   tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(TFT_MAGENTA, TFT_BLACK);
+  tft.setTextColor(theme().stationNameText, theme().background);
   tft.drawString(stationName, tft.width() / 2, 127, 4);
 }
 
 void drawRdsMetadata();
 void drawSectionDivider(int y);
+void drawRadioText(const char *text);
+void drawFrequencyDialRetro(uint16_t frequency);
+void drawSignalBarRetro(int rssi);
+void drawStereoLampRetro(bool stereo);
 
 void resetStationName()
 {
@@ -107,8 +170,8 @@ void resetStationName()
   renderedRdsMetadataValid = false;
   currentMusicSpeech = false;
   strcpy(currentRdsClock, "--:--");
-  tft.fillRect(8, 112, tft.width() - 16, 31, TFT_BLACK);
-  tft.fillRect(10, 145, tft.width() - 20, 42, TFT_BLACK);
+  tft.fillRect(8, 112, tft.width() - 16, 31, theme().background);
+  tft.fillRect(10, 145, tft.width() - 20, 42, theme().background);
   drawSectionDivider(159);
   drawRdsMetadata();
 }
@@ -143,10 +206,12 @@ void drawRadioDisplay(bool force = false)
   if (force || frequency != lastDisplayFrequency)
   {
     lastDisplayFrequency = frequency;
-    tft.fillRect(0, 31, tft.width(), 78, TFT_BLACK);
+    tft.fillRect(0, 31, tft.width(), 78, theme().background);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setTextColor(theme().frequencyText, theme().background);
     tft.drawFloat(frequency / 100.0f, 1, tft.width() / 2, 70, 7);
+    if (theme().isRetro)
+      drawFrequencyDialRetro(frequency);
   }
 
     bool signalChanged = force || lastDisplayRssi < 0 ||
@@ -159,27 +224,100 @@ void drawRadioDisplay(bool force = false)
   {
     lastDisplayRssi = rssi;
     lastSignalRenderAt = millis();
-    tft.fillRect(78, 190, 118, 21, TFT_BLACK);
-    tft.setTextColor(rssi >= 45 ? TFT_GREEN : (rssi >= 30 ? TFT_YELLOW : TFT_ORANGE), TFT_BLACK);
-    char signalText[20];
-    snprintf(signalText, sizeof(signalText), "%d dBuV", rssi);
-    tft.setTextDatum(ML_DATUM);
-    tft.drawString(signalText, 82, 201, 2);
+    tft.fillRect(78, 190, 118, 21, theme().background);
+    if (theme().isRetro)
+    {
+      drawSignalBarRetro(rssi);
+    }
+    else
+    {
+      tft.setTextColor(rssi >= 45 ? theme().signalGood : (rssi >= 30 ? theme().signalMid : theme().signalLow), theme().background);
+      char signalText[20];
+      snprintf(signalText, sizeof(signalText), "%d dBuV", rssi);
+      tft.setTextDatum(ML_DATUM);
+      tft.drawString(signalText, 82, 201, 2);
+    }
   }
 
   if (stereoChanged)
   {
     lastDisplayStereo = stereoCandidate;
-    tft.fillRect(220, 190, 88, 21, TFT_BLACK);
-    tft.setTextColor(stereoCandidate ? TFT_GREEN : TFT_YELLOW, TFT_BLACK);
-    tft.setTextDatum(MR_DATUM);
-    tft.drawString(stereoCandidate ? "STEREO" : "MONO", 308, 201, 2);
+    tft.fillRect(220, 190, 88, 21, theme().background);
+    if (theme().isRetro)
+    {
+      drawStereoLampRetro(stereoCandidate);
+    }
+    else
+    {
+      tft.setTextColor(stereoCandidate ? theme().stereoOn : theme().stereoOff, theme().background);
+      tft.setTextDatum(MR_DATUM);
+      tft.drawString(stereoCandidate ? "STEREO" : "MONO", 308, 201, 2);
+    }
   }
 }
 
 void drawSectionDivider(int y)
 {
-  tft.drawFastHLine(12, y, tft.width() - 24, TFT_DARKGREY);
+  tft.drawFastHLine(12, y, tft.width() - 24, theme().divider);
+}
+
+void drawFrequencyDialRetro(uint16_t frequency)
+{
+  constexpr int dialX = 118;
+  constexpr int dialW = 190;
+  const int dialRight = dialX + dialW;
+  tft.fillRect(dialX, 2, dialW, 24, theme().background);
+  for (uint16_t f = 8800; f <= 10800; f += 100)
+  {
+    int x = dialX + static_cast<int>((f - 8800) * (dialW - 6) / 2000.0f);
+    bool major = (f % 400 == 0);
+    if (major)
+      tft.fillRect(x - 1, 4, 2, 9, theme().divider);
+    else
+      tft.drawFastVLine(x, 4, 6, theme().divider);
+    if (major && theme().dialShowLabels)
+    {
+      char label[4];
+      snprintf(label, sizeof(label), "%u", f / 100);
+      tft.setTextDatum(TC_DATUM);
+      tft.setTextColor(theme().rdsValue, theme().background);
+      tft.drawString(label, x, 14, 1);
+    }
+  }
+  uint16_t clampedFreq = constrain(frequency, (uint16_t)8800, (uint16_t)10800);
+  int px = dialX + static_cast<int>((clampedFreq - 8800) * (dialW - 6) / 2000.0f);
+  px = constrain(px, dialX, dialRight - 6);
+  if (theme().dialShowLabels)
+    tft.fillRect(px - 2, 22, 4, 3, theme().frequencyText);
+  else
+    tft.fillTriangle(px, 16, px - 4, 23, px + 4, 23, theme().frequencyText);
+}
+
+void drawSignalBarRetro(int rssi)
+{
+  constexpr int segments = 9;
+  constexpr int segW = 10;
+  constexpr int gap = 3;
+  constexpr int originX = 78;
+  int lit = constrain(map(rssi, 10, 60, 0, segments), 0, segments);
+  uint16_t litColor = (rssi >= 45) ? theme().signalGood : (rssi >= 30 ? theme().signalMid : theme().signalLow);
+  for (int i = 0; i < segments; i++)
+  {
+    int x = originX + i * (segW + gap);
+    tft.fillRect(x, 192, segW, 16, (i < lit) ? litColor : theme().signalOff);
+  }
+}
+
+void drawStereoLampRetro(bool stereo)
+{
+  constexpr int cx = 232;
+  constexpr int cy = 200;
+  constexpr int r = 7;
+  tft.fillCircle(cx, cy, r, stereo ? theme().stereoOn : theme().background);
+  tft.drawCircle(cx, cy, r, theme().divider);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(theme().rdsValue, theme().background);
+  tft.drawString(stereo ? "STEREO" : "MONO", cx + r + 6, cy, 2);
 }
 
 bool bootJpegOutput(int16_t x, int16_t y, uint16_t width, uint16_t height, uint16_t *bitmap)
@@ -213,18 +351,16 @@ bool drawBootLogo()
   return result == JDR_OK;
 }
 
-void initializeRadioDisplay()
+void drawStaticChrome()
 {
-  tft.init();
-  tft.setRotation(1);
-  tft.fillScreen(TFT_BLACK);
-
-  if (fileSystemReady && drawBootLogo())
-    delay(1800);
-
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(theme().background);
+  if (theme().isRetro)
+  {
+    tft.drawRect(2, 2, tft.width() - 4, tft.height() - 4, theme().frameAccent);
+    tft.drawRect(5, 5, tft.width() - 10, tft.height() - 10, theme().frameAccent);
+  }
   tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(theme().titleText, theme().background);
   tft.drawString("FM RADIO", 12, 8, 2);
   drawSectionDivider(27);
   drawSectionDivider(109);
@@ -233,9 +369,38 @@ void initializeRadioDisplay()
   drawSectionDivider(188);
   drawSectionDivider(214);
   tft.setTextDatum(ML_DATUM);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextColor(theme().rdsValue, theme().background);
   tft.drawString("SIGNAL", 12, 201, 2);
   tft.drawString("STEREO", 220, 201, 2);
+}
+
+void initializeRadioDisplay()
+{
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(theme().background);
+
+  if (fileSystemReady && drawBootLogo())
+    delay(1800);
+
+  drawStaticChrome();
+}
+
+void toggleTheme()
+{
+  activeThemeIndex = (activeThemeIndex + 1) % 3;
+  lastDisplayFrequency = 0xFFFF;
+  lastDisplayRssi = -1;
+  lastDisplayStereo = !rx.isStereo();
+  renderedRdsMetadataValid = false;
+
+  drawStaticChrome();
+  if (lastRdsText[0] != '\0')
+    drawStationName(lastRdsText);
+  drawRadioText(currentRadioText);
+  drawRdsMetadata();
+  drawRadioDisplay(true);
+  Serial.printf("Theme: %s\r\n", theme().name);
 }
 
 const char *ptyNames[32] = {
@@ -260,7 +425,7 @@ void drawRdsMetadata()
   if (!currentRdsMetadataValid)
   {
     if (renderedRdsMetadataValid)
-      tft.fillRect(10, 160, tft.width() - 20, 26, TFT_BLACK);
+      tft.fillRect(10, 160, tft.width() - 20, 26, theme().background);
     renderedRdsMetadataValid = false;
     return;
   }
@@ -281,44 +446,44 @@ void drawRdsMetadata()
   bool renderAll = !renderedRdsMetadataValid;
   if (renderAll || renderedProgramId != currentProgramId)
   {
-    tft.fillRect(12, 160, 75, 14, TFT_BLACK);
+    tft.fillRect(12, 160, 75, 14, theme().background);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setTextColor(theme().rdsLabel, theme().background);
     tft.drawString(programIdText, 12, 168, 1);
   }
   if (renderAll || renderedPty != currentPty)
   {
-    tft.fillRect(96, 160, 212, 14, TFT_BLACK);
+    tft.fillRect(96, 160, 212, 14, theme().background);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setTextColor(theme().rdsLabel, theme().background);
     tft.drawString(ptyText, 96, 168, 1);
   }
   if (renderAll || renderedTp != currentTp)
   {
-    tft.fillRect(12, 172, 46, 14, TFT_BLACK);
+    tft.fillRect(12, 172, 46, 14, theme().background);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setTextColor(theme().rdsValue, theme().background);
     tft.drawString(tpText, 12, 180, 1);
   }
   if (renderAll || renderedTa != currentTa)
   {
-    tft.fillRect(72, 172, 46, 14, TFT_BLACK);
+    tft.fillRect(72, 172, 46, 14, theme().background);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setTextColor(theme().rdsValue, theme().background);
     tft.drawString(taText, 72, 180, 1);
   }
   if (renderAll || renderedMusicSpeech != currentMusicSpeech)
   {
-    tft.fillRect(132, 172, 96, 14, TFT_BLACK);
+    tft.fillRect(132, 172, 96, 14, theme().background);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setTextColor(theme().rdsValue, theme().background);
     tft.drawString(musicSpeechText, 132, 180, 1);
   }
   if (renderAll || strcmp(renderedRdsClock, currentRdsClock) != 0)
   {
-    tft.fillRect(232, 172, 76, 14, TFT_BLACK);
+    tft.fillRect(232, 172, 76, 14, theme().background);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setTextColor(theme().rdsValue, theme().background);
     tft.drawString(clockText, 232, 180, 1);
   }
   renderedProgramId = currentProgramId;
@@ -332,7 +497,7 @@ void drawRdsMetadata()
 
 void drawRadioText(const char *text)
 {
-  tft.fillRect(10, 145, tft.width() - 20, 13, TFT_BLACK);
+  tft.fillRect(10, 145, tft.width() - 20, 13, theme().background);
   if (text[0] == '\0')
     return;
 
@@ -366,7 +531,7 @@ void drawRadioText(const char *text)
   }
 
   tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(theme().radioTextColor, theme().background);
   tft.drawString(displayText, tft.width() / 2, 151, 1);
 }
 
@@ -571,6 +736,7 @@ void showHelp()
   Serial.println("Type N to scan without low-pass filter");
   Serial.println("Type TYYYY-MM-DD HH:MM to set local scan date/time");
   Serial.println("Type L to print saved scan files");
+  Serial.println("Type R to cycle Modern/Retro/Classic display theme");
   Serial.println("Type 0 to show current status");
   Serial.println("Type ? to this help.");
   Serial.println("==================================================");
@@ -824,6 +990,7 @@ void loop()
     case 'N': case 'n': scanBand("/fm_filter_off.txt", "OFF"); break;
     case 'T': case 't': setScanDateTime(); break;
     case 'L': case 'l': printSavedScans(); break;
+    case 'R': case 'r': toggleTheme(); break;
     case '0': showStatus(); break;
     case '?': showHelp(); break;
     default: break;
