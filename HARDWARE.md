@@ -36,6 +36,8 @@ Use normally-open momentary buttons. One terminal of each button connects to its
 |---|---:|---|---|
 | SEEK UP | GPIO14 | GND | Seeks up to the next station |
 | SEEK DOWN | GPIO15 | GND | Seeks down to the next station |
+| FREQ UP | GPIO16 | GND | Steps the tuned frequency up (same as Serial `U`) |
+| FREQ DOWN | GPIO17 | GND | Steps the tuned frequency down (same as Serial `D`) |
 
 The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO13/12. These are separate buses. The firmware configures the display pins and ILI9341 driver through `platformio.ini` and initializes the screen in landscape mode (`setRotation(1)`).
 
@@ -62,6 +64,8 @@ The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO13/12. These are sep
 
 ESP32 GPIO14 ----[ SEEK UP button ]------ GND
 ESP32 GPIO15 ----[ SEEK DOWN button ]---- GND
+ESP32 GPIO16 ----[ FREQ UP button ]------ GND
+ESP32 GPIO17 ----[ FREQ DOWN button ]---- GND
 
 ##Или ако нема место на плоча стави ги овие GPIO за екранот
 

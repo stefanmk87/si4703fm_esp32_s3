@@ -70,7 +70,7 @@ constexpr RadioTheme themeClassic = {
 
 enum DisplayThemeId : uint8_t { THEME_MODERN = 0, THEME_RETRO = 1, THEME_CLASSIC = 2 };
 const RadioTheme *const allThemes[3] = {&themeModern, &themeRetro, &themeClassic};
-uint8_t activeThemeIndex = THEME_RETRO;
+uint8_t activeThemeIndex = THEME_CLASSIC;
 
 inline const RadioTheme &theme()
 {
@@ -79,6 +79,8 @@ inline const RadioTheme &theme()
 
 constexpr uint8_t SEEK_UP_BUTTON_PIN = 14;
 constexpr uint8_t SEEK_DOWN_BUTTON_PIN = 15;
+constexpr uint8_t FREQ_UP_BUTTON_PIN = 16;
+constexpr uint8_t FREQ_DOWN_BUTTON_PIN = 17;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 35;
 
 struct DebouncedButton
@@ -91,6 +93,8 @@ struct DebouncedButton
 
 DebouncedButton seekUpButton = {SEEK_UP_BUTTON_PIN, HIGH, HIGH, 0};
 DebouncedButton seekDownButton = {SEEK_DOWN_BUTTON_PIN, HIGH, HIGH, 0};
+DebouncedButton freqUpButton = {FREQ_UP_BUTTON_PIN, HIGH, HIGH, 0};
+DebouncedButton freqDownButton = {FREQ_DOWN_BUTTON_PIN, HIGH, HIGH, 0};
 
 #define SCAN_STATION_RSSI_THRESHOLD 40
 char psAssembly[9] = {};
@@ -731,6 +735,7 @@ void showHelp()
   Serial.println("Type U to increase and D to decrease the frequency");
   Serial.println("Type S or s to seek station Up or Down");
   Serial.println("GPIO14 to GND: Seek UP | GPIO15 to GND: Seek DOWN");
+  Serial.println("GPIO16 to GND: Freq UP | GPIO17 to GND: Freq DOWN");
   Serial.println("Type + or - to volume Up or Down");
   Serial.println("Type F to scan with low-pass filter");
   Serial.println("Type N to scan without low-pass filter");
@@ -766,6 +771,31 @@ void pollSeekButton(DebouncedButton &button, uint8_t direction, const char *labe
   {
     Serial.printf("Seeking %s...\r\n", label);
     rx.seek(SI470X_SEEK_WRAP, direction);
+    resetStationName();
+    showStatus();
+  }
+}
+
+void pollFrequencyButton(DebouncedButton &button, bool increase, const char *label)
+{
+  bool reading = digitalRead(button.pin);
+  if (reading != button.lastReading)
+  {
+    button.lastReading = reading;
+    button.changedAt = millis();
+  }
+
+  if (millis() - button.changedAt < BUTTON_DEBOUNCE_MS || reading == button.stableState)
+    return;
+
+  button.stableState = reading;
+  if (button.stableState == LOW)
+  {
+    Serial.printf("Frequency %s...\r\n", label);
+    if (increase)
+      rx.setFrequencyUp();
+    else
+      rx.setFrequencyDown();
     resetStationName();
     showStatus();
   }
@@ -936,6 +966,8 @@ void setup()
 
   pinMode(SEEK_UP_BUTTON_PIN, INPUT_PULLUP);
   pinMode(SEEK_DOWN_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(FREQ_UP_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(FREQ_DOWN_BUTTON_PIN, INPUT_PULLUP);
 
   fileSystemReady = SPIFFS.begin(true);
   initializeRadioDisplay();
@@ -955,6 +987,10 @@ void setup()
     rx.setSpace(1);
     rx.setBand(0);
     rx.setFmDeemphasis(1); // 50µs стандард за Европа / Македонија
+  // rx.setAgc(true); // автоматско поткрепување на засилувањето за максимален опсег на прием
+    rx.setSoftmute(true); // автоматски го пригушува шумот кога сигналот е слаб/нестабилен
+    rx.setSoftmuteAttack(0); // најбрза реакција - брзо го сопира нагло пукање/шум (пр. неонки)
+    rx.setSoftmuteAttenuation(0); // најсилно пригушување (16dB) на шумот кога сигналот е слаб
 
 
     rx.getAllRegisters();
@@ -973,6 +1009,8 @@ void loop()
 {
   pollSeekButton(seekUpButton, SI470X_SEEK_UP, "UP");
   pollSeekButton(seekDownButton, SI470X_SEEK_DOWN, "DOWN");
+  pollFrequencyButton(freqUpButton, true, "UP");
+  pollFrequencyButton(freqDownButton, false, "DOWN");
 
   // 1. Контрола преку Serial Monitor
   if (Serial.available() > 0)
