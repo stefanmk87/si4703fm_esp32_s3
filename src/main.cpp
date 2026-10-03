@@ -93,14 +93,15 @@ unsigned long volumeBarShownAt = 0;
 // IR далечинско - испратени кодови од твоето далечинско (Raw-Data).
 // !!! Volume Down и Freq Down ми ги прати со ИСТА вредност 0xB748FE01 - конфликт!
 // Freq Down е оставен на 0x00000000 (исклучено) додека не ми прател точниот код.
-constexpr uint32_t IR_CODE_VOLUME_UP    = 0xE51AFE01;
-constexpr uint32_t IR_CODE_VOLUME_DOWN  = 0xB748FE01;
+constexpr uint32_t IR_CODE_VOLUME_UP    = 0xB44BFE01;
+constexpr uint32_t IR_CODE_VOLUME_DOWN  = 0xB04FFE01;
 constexpr uint32_t IR_CODE_SEEK_UP      = 0xF807FE01; // "Seek Right"
 constexpr uint32_t IR_CODE_SEEK_DOWN    = 0xB847FE01; // "Seek Left"
 constexpr uint32_t IR_CODE_FREQ_UP      = 0xF609FE01;
-constexpr uint32_t IR_CODE_FREQ_DOWN    = 0xFA05FE01; // TODO: конфликтен код, прати нов
+constexpr uint32_t IR_CODE_FREQ_DOWN    = 0xFA05FE01; 
 constexpr uint32_t IR_CODE_MUTE_TOGGLE  = 0xBD42FE01;
 constexpr uint32_t IR_CODE_THEME_CHANGE = 0xC33CFE01;
+constexpr uint32_t IR_CODE_REBOOT       = 0xE31CFE01; // TODO: сними го кодот преку IR monitor и замени
 bool irMuteEngaged = false;
 
 // ---- NVS (Preferences) персистенција на фреквенција/волумен, debounced za da ne go abi flash-от ----
@@ -949,6 +950,11 @@ void handleIrCommand(uint32_t code, bool isRepeat)
   else if (!isRepeat && code == IR_CODE_THEME_CHANGE)
   {
     toggleTheme();
+  }
+  else if (!isRepeat && code == IR_CODE_REBOOT)
+  {
+    Serial.println("Rebooting via Remote...");
+    ESP.restart(); // Software Reset na ESP32 да можам да го рестартирам преку далечински
   }
 }
 
