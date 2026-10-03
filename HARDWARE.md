@@ -39,6 +39,34 @@ Use normally-open momentary buttons. One terminal of each button connects to its
 | FREQ UP | GPIO16 | GND | Steps the tuned frequency up (same as Serial `U`) |
 | FREQ DOWN | GPIO17 | GND | Steps the tuned frequency down (same as Serial `D`) |
 
+### IR remote receiver (VS1838B)
+
+Used to control the radio with a salvaged remote instead of WiFi/Bluetooth (both are avoided here to keep RF noise away from the FM tuner). Verify the pin order on the actual module with a multimeter/datasheet before wiring — reversing VCC and GND can destroy it.
+
+| VS1838B pin | ESP32-S3 GPIO / net | Notes |
+|---|---:|---|
+| OUT | GPIO18 | Digital IR data signal |
+| GND | GND | Common ground |
+| VCC | 3V3 (through filter below) | Needs clean 3.3 V, see filter |
+
+**Required filter (do not skip):** VS1838B's internal AGC is sensitive to supply noise and can report phantom IR pulses from a noisy rail. Add, right at the receiver's pins:
+
+- 100 Ω resistor in series on the VCC line.
+- 10 µF electrolytic capacitor between VCC and GND, after the resistor (closest to the receiver).
+- 100 nF ceramic capacitor in parallel with the 10 µF, same two points.
+
+Keep the receiver and its wiring away from the MP2307 and the antenna, same rule as the other EMI-sensitive parts on this board (see [EMI_FILTER.md](EMI_FILTER.md)).
+
+For wide-angle reception (not just pointed straight at it), mount the receiver with a clear, unobstructed view of the room rather than recessed in a narrow opening, and keep direct sunlight/fluorescent light off the lens (another common source of false IR triggers).
+
+**Firmware / mapping the remote buttons:** the firmware uses the `Arduino-IRremote` library and decodes any protocol automatically (NEC, Sony, etc. — works with both the Android box remote and the small 3-button remote). Six button slots are supported: Volume Up/Down, Seek Up/Down, Frequency Up/Down.
+
+1. Flash the firmware and open Serial Monitor.
+2. Press a remote button. You'll see a line like `[IR] Protocol=NEC Address=0x0 Command=0x18 Raw-Data=0xE718FF00 ...`.
+3. Copy the `Raw-Data=0x........` value for that button.
+4. In `src/main.cpp`, find the six `constexpr uint32_t IR_CODE_...` constants near the top and paste the matching hex value (e.g. `IR_CODE_VOLUME_UP = 0xE718FF00;`) for each of the 6 actions.
+5. Rebuild and re-upload. Repeat presses (holding a button) work for Volume; Seek/Frequency ignore IR repeat frames so a held button does not run away.
+
 The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO13/12. These are separate buses. The firmware configures the display pins and ILI9341 driver through `platformio.ini` and initializes the screen in landscape mode (`setRotation(1)`).
 
 ## ASCII Wiring Diagram
@@ -67,6 +95,19 @@ ESP32 GPIO15 ----[ SEEK DOWN button ]---- GND
 ESP32 GPIO16 ----[ FREQ UP button ]------ GND
 ESP32 GPIO17 ----[ FREQ DOWN button ]---- GND
 
+VS1838B OUT -----------------------------------------------GPIO18
+VS1838B GND -------------------------------+-----------------GND
+                                            |
+                 3V3 --[100R]--+----------- VS1838B VCC
+                                |
+                           +----+----+
+                           |         |
+                        [10uF]    [100nF]
+                           |         |
+                           +----+----+
+                                |
+                               GND (same net as VS1838B GND above)
+
 ##Или ако нема место на плоча стави ги овие GPIO за екранот
 
 TFT CS	        GPIO1	
@@ -77,7 +118,7 @@ TFT SCK / SCL	GPIO40
 
 build_flags =
     -DUSER_SETUP_LOADED
-    -DILI9341_DRIVER
+    -DILI9341_DRIVER=ооо
     -DTFT_MISO=-1
     -DTFT_MOSI=41
     -DTFT_SCLK=40
@@ -106,3 +147,5 @@ All GND pins, including the button grounds, share a common ground.
 - Candidate scan points require a valid AFC status and RSSI of at least 40 dBµV. RSSI is received RF signal strength, not audio loudness.
 
 The scan files are stored in ESP32 flash (SPIFFS), not on the computer. Use `download_scans.ps1` after closing Serial Monitor to copy them to the Desktop.
+
+- The IR remote receiver on GPIO18 decodes any protocol and prints `[IR] Protocol=... Raw-Data=0x...` to Serial for every button press, to help you map new buttons. See the IR remote receiver section above for the mapping steps.

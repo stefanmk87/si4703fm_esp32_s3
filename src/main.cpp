@@ -6,6 +6,8 @@
 #include <SPIFFS.h>
 #include <string.h>
 #include <time.h>
+#include <IRremote.hpp>
+#include <Preferences.h>
 
 #define RESET_PIN 6       
 #define ESP32_I2C_SDA 4
@@ -44,12 +46,13 @@ struct RadioTheme
   uint16_t stereoOff;
   bool isRetro;
   bool dialShowLabels;
+  bool signalShowNumber;
 };
 
 constexpr RadioTheme themeModern = {
   "MODERN", TFT_BLACK, TFT_DARKGREY, TFT_WHITE, TFT_DARKGREY, TFT_GREEN,
   TFT_MAGENTA, TFT_WHITE, TFT_CYAN, TFT_LIGHTGREY, TFT_GREEN, TFT_YELLOW,
-  TFT_ORANGE, TFT_DARKGREY, TFT_GREEN, TFT_YELLOW, false, false
+  TFT_ORANGE, TFT_DARKGREY, TFT_GREEN, TFT_YELLOW, false, false, false
 };
 
 constexpr RadioTheme themeRetro = {
@@ -57,7 +60,7 @@ constexpr RadioTheme themeRetro = {
   rgb565(110, 60, 10), rgb565(255, 176, 0), rgb565(255, 221, 120),
   rgb565(255, 196, 64), rgb565(255, 160, 40), rgb565(214, 150, 60),
   rgb565(255, 176, 0), rgb565(255, 120, 0), rgb565(200, 40, 20),
-  rgb565(70, 40, 10), rgb565(255, 176, 0), rgb565(90, 60, 20), true, false
+  rgb565(70, 40, 10), rgb565(255, 176, 0), rgb565(90, 60, 20), true, false, true
 };
 
 constexpr RadioTheme themeClassic = {
@@ -65,7 +68,7 @@ constexpr RadioTheme themeClassic = {
   rgb565(120, 90, 40), rgb565(255, 200, 60), rgb565(255, 245, 220),
   rgb565(230, 190, 120), rgb565(205, 127, 50), rgb565(200, 180, 140),
   rgb565(0, 200, 120), rgb565(230, 180, 40), rgb565(200, 40, 30),
-  rgb565(60, 50, 30), rgb565(0, 200, 120), rgb565(90, 70, 40), true, true
+  rgb565(60, 50, 30), rgb565(0, 200, 120), rgb565(90, 70, 40), true, true, true
 };
 
 enum DisplayThemeId : uint8_t { THEME_MODERN = 0, THEME_RETRO = 1, THEME_CLASSIC = 2 };
@@ -81,7 +84,47 @@ constexpr uint8_t SEEK_UP_BUTTON_PIN = 14;
 constexpr uint8_t SEEK_DOWN_BUTTON_PIN = 15;
 constexpr uint8_t FREQ_UP_BUTTON_PIN = 16;
 constexpr uint8_t FREQ_DOWN_BUTTON_PIN = 17;
+constexpr uint8_t IR_RECEIVE_PIN = 18;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 35;
+constexpr unsigned long VOLUME_BAR_TIMEOUT_MS = 2000;
+bool volumeBarVisible = false;
+unsigned long volumeBarShownAt = 0;
+
+// IR далечинско - испратени кодови од твоето далечинско (Raw-Data).
+// !!! Volume Down и Freq Down ми ги прати со ИСТА вредност 0xB748FE01 - конфликт!
+// Freq Down е оставен на 0x00000000 (исклучено) додека не ми прател точниот код.
+constexpr uint32_t IR_CODE_VOLUME_UP    = 0xE51AFE01;
+constexpr uint32_t IR_CODE_VOLUME_DOWN  = 0xB748FE01;
+constexpr uint32_t IR_CODE_SEEK_UP      = 0xF807FE01; // "Seek Right"
+constexpr uint32_t IR_CODE_SEEK_DOWN    = 0xB847FE01; // "Seek Left"
+constexpr uint32_t IR_CODE_FREQ_UP      = 0xF609FE01;
+constexpr uint32_t IR_CODE_FREQ_DOWN    = 0xFA05FE01; // TODO: конфликтен код, прати нов
+constexpr uint32_t IR_CODE_MUTE_TOGGLE  = 0xBD42FE01;
+constexpr uint32_t IR_CODE_THEME_CHANGE = 0xC33CFE01;
+bool irMuteEngaged = false;
+
+// ---- NVS (Preferences) персистенција на фреквенција/волумен, debounced za da ne go abi flash-от ----
+Preferences preferences;
+constexpr unsigned long SETTINGS_SAVE_DEBOUNCE_MS = 2500;
+bool settingsDirty = false;
+unsigned long lastSettingsChangeAt = 0;
+
+void markSettingsDirty()
+{
+  settingsDirty = true;
+  lastSettingsChangeAt = millis();
+}
+
+void saveSettingsIfDue()
+{
+  if (!settingsDirty || millis() - lastSettingsChangeAt < SETTINGS_SAVE_DEBOUNCE_MS)
+    return;
+
+  preferences.putFloat("freq", rx.getFrequency() / 100.0f);
+  preferences.putUChar("vol", rx.getVolume());
+  settingsDirty = false;
+  Serial.println("Settings saved to flash (NVS).");
+}
 
 struct DebouncedButton
 {
@@ -299,16 +342,25 @@ void drawFrequencyDialRetro(uint16_t frequency)
 
 void drawSignalBarRetro(int rssi)
 {
-  constexpr int segments = 9;
   constexpr int segW = 10;
   constexpr int gap = 3;
   constexpr int originX = 78;
+  int segments = theme().signalShowNumber ? 5 : 9;
   int lit = constrain(map(rssi, 10, 60, 0, segments), 0, segments);
   uint16_t litColor = (rssi >= 45) ? theme().signalGood : (rssi >= 30 ? theme().signalMid : theme().signalLow);
+  int barWidth = segments * segW + (segments - 1) * gap;
   for (int i = 0; i < segments; i++)
   {
     int x = originX + i * (segW + gap);
     tft.fillRect(x, 192, segW, 16, (i < lit) ? litColor : theme().signalOff);
+  }
+  if (theme().signalShowNumber)
+  {
+    char dbText[12];
+    snprintf(dbText, sizeof(dbText), "%d dBuV", rssi);
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(theme().rdsValue, theme().background);
+    tft.drawString(dbText, originX + barWidth + 6, 200, 1);
   }
 }
 
@@ -322,6 +374,42 @@ void drawStereoLampRetro(bool stereo)
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(theme().rdsValue, theme().background);
   tft.drawString(stereo ? "STEREO" : "MONO", cx + r + 6, cy, 2);
+}
+
+void drawVolumeBar(uint8_t volume)
+{
+  constexpr int barX = 12;
+  constexpr int barY = 222;
+  constexpr int barW = 250;
+  constexpr int barH = 10;
+  uint8_t percent = static_cast<uint8_t>((static_cast<uint16_t>(volume) * 100) / 15);
+  int fillWidth = (barW - 2) * percent / 100;
+
+  tft.drawRect(barX, barY, barW, barH, theme().divider);
+  tft.fillRect(barX + 1, barY + 1, barW - 2, barH - 2, theme().background);
+  if (fillWidth > 0)
+    tft.fillRect(barX + 1, barY + 1, fillWidth, barH - 2, theme().signalGood);
+
+  int textX = barX + barW + 6;
+  int textZoneW = (tft.width() - 12) - textX; // застани пред декоративната рамка на десно
+  tft.fillRect(textX, barY - 3, textZoneW, barH + 6, theme().background);
+  char volText[8];
+  snprintf(volText, sizeof(volText), "%u%%", percent);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(theme().rdsValue, theme().background);
+  tft.drawString(volText, textX, barY + barH / 2, 2);
+
+  volumeBarVisible = true;
+  volumeBarShownAt = millis();
+}
+
+void hideVolumeBarIfExpired()
+{
+  if (!volumeBarVisible || millis() - volumeBarShownAt < VOLUME_BAR_TIMEOUT_MS)
+    return;
+
+  tft.fillRect(12, 219, tft.width() - 24, 16, theme().background);
+  volumeBarVisible = false;
 }
 
 bool bootJpegOutput(int16_t x, int16_t y, uint16_t width, uint16_t height, uint16_t *bitmap)
@@ -393,6 +481,7 @@ void initializeRadioDisplay()
 void toggleTheme()
 {
   activeThemeIndex = (activeThemeIndex + 1) % 3;
+  preferences.putUChar("theme", activeThemeIndex);
   lastDisplayFrequency = 0xFFFF;
   lastDisplayRssi = -1;
   lastDisplayStereo = !rx.isStereo();
@@ -742,6 +831,7 @@ void showHelp()
   Serial.println("Type TYYYY-MM-DD HH:MM to set local scan date/time");
   Serial.println("Type L to print saved scan files");
   Serial.println("Type R to cycle Modern/Retro/Classic display theme");
+  Serial.println("Type I to run a raw IR wiring test (bypasses the IR library)");
   Serial.println("Type 0 to show current status");
   Serial.println("Type ? to this help.");
   Serial.println("==================================================");
@@ -772,6 +862,7 @@ void pollSeekButton(DebouncedButton &button, uint8_t direction, const char *labe
     Serial.printf("Seeking %s...\r\n", label);
     rx.seek(SI470X_SEEK_WRAP, direction);
     resetStationName();
+    markSettingsDirty();
     showStatus();
   }
 }
@@ -797,8 +888,91 @@ void pollFrequencyButton(DebouncedButton &button, bool increase, const char *lab
     else
       rx.setFrequencyDown();
     resetStationName();
+    markSettingsDirty();
     showStatus();
   }
+}
+
+void handleIrCommand(uint32_t code, bool isRepeat)
+{
+  if (code == IR_CODE_VOLUME_UP)
+  {
+    rx.setVolumeUp();
+    drawVolumeBar(rx.getVolume());
+    markSettingsDirty();
+    showStatus();
+  }
+  else if (code == IR_CODE_VOLUME_DOWN)
+  {
+    rx.setVolumeDown();
+    drawVolumeBar(rx.getVolume());
+    markSettingsDirty();
+    showStatus();
+  }
+  else if (!isRepeat && code == IR_CODE_SEEK_UP)
+  {
+    Serial.println("IR Seeking UP...");
+    rx.seek(SI470X_SEEK_WRAP, SI470X_SEEK_UP);
+    resetStationName();
+    markSettingsDirty();
+    showStatus();
+  }
+  else if (!isRepeat && code == IR_CODE_SEEK_DOWN)
+  {
+    Serial.println("IR Seeking DOWN...");
+    rx.seek(SI470X_SEEK_WRAP, SI470X_SEEK_DOWN);
+    resetStationName();
+    markSettingsDirty();
+    showStatus();
+  }
+  else if (!isRepeat && code == IR_CODE_FREQ_UP)
+  {
+    rx.setFrequencyUp();
+    resetStationName();
+    markSettingsDirty();
+    showStatus();
+  }
+  else if (!isRepeat && code == IR_CODE_FREQ_DOWN)
+  {
+    rx.setFrequencyDown();
+    resetStationName();
+    markSettingsDirty();
+    showStatus();
+  }
+  else if (!isRepeat && code == IR_CODE_MUTE_TOGGLE)
+  {
+    irMuteEngaged = !irMuteEngaged;
+    rx.setMute(irMuteEngaged);
+    Serial.printf("Mute: %s\r\n", irMuteEngaged ? "ON" : "OFF");
+    showStatus();
+  }
+  else if (!isRepeat && code == IR_CODE_THEME_CHANGE)
+  {
+    toggleTheme();
+  }
+}
+
+void irRawPinTest()
+{
+  Serial.println("Raw IR pin test on GPIO18 - 5 seconds, press the remote now...");
+  Serial.println("(bypasses the IRremote library completely - tests the wiring only)");
+  bool lastLevel = digitalRead(IR_RECEIVE_PIN);
+  unsigned long edgeCount = 0;
+  unsigned long testStart = millis();
+  while (millis() - testStart < 5000)
+  {
+    bool level = digitalRead(IR_RECEIVE_PIN);
+    if (level != lastLevel)
+    {
+      lastLevel = level;
+      edgeCount++;
+    }
+  }
+  Serial.printf("Edges detected in 5s: %lu\r\n", edgeCount);
+  if (edgeCount == 0)
+    Serial.println("No signal at all reached GPIO18 - check wiring/power/pinout, not firmware.");
+  else
+    Serial.println("Signal IS reaching GPIO18 - if [IR] lines still don't show, it's a library/protocol issue, not wiring.");
 }
 
 void setScanDateTime()
@@ -962,22 +1136,30 @@ void setup()
     Serial.begin(115200);
     while (!Serial) ;
 
-
+    preferences.begin("radio", false);
+    activeThemeIndex = preferences.getUChar("theme", THEME_CLASSIC);
+    if (activeThemeIndex > THEME_CLASSIC)
+      activeThemeIndex = THEME_CLASSIC;
+    float savedFrequencyMHz = preferences.getFloat("freq", 92.90f);
+    uint8_t savedVolume = preferences.getUChar("vol", 8);
+    uint16_t savedChannelValue = static_cast<uint16_t>(savedFrequencyMHz * 100.0f + 0.5f);
 
   pinMode(SEEK_UP_BUTTON_PIN, INPUT_PULLUP);
   pinMode(SEEK_DOWN_BUTTON_PIN, INPUT_PULLUP);
   pinMode(FREQ_UP_BUTTON_PIN, INPUT_PULLUP);
   pinMode(FREQ_DOWN_BUTTON_PIN, INPUT_PULLUP);
+  IrReceiver.begin(IR_RECEIVE_PIN, DISABLE_LED_FEEDBACK);
 
   fileSystemReady = SPIFFS.begin(true);
   initializeRadioDisplay();
 
     Serial.println("Иницијализација на I2C и SI470X...");
     Serial.println(fileSystemReady ? "SPIFFS ready." : "SPIFFS mount failed.");
+    Serial.printf("Loaded from NVS: theme=%s, %.2f MHz, volume %u\r\n", theme().name, savedFrequencyMHz, savedVolume);
     Wire.setPins(ESP32_I2C_SDA, ESP32_I2C_SCL);
-    
+
     rx.setup(RESET_PIN, ESP32_I2C_SDA);
-    rx.setVolume(8);
+    rx.setVolume(savedVolume);
 
     delay(500);
 
@@ -998,7 +1180,7 @@ void setup()
     rx.setShadownRegister(0x06, (register06 & 0xFF0F) | (3 << 4));
     rx.setAllRegisters();
 
-    rx.setFrequency(10630); // Директно на твојата силна станица 92.9 MHz
+    rx.setFrequency(savedChannelValue); // Вчитано од NVS (или 92.90 MHz default)
     drawRadioDisplay(true);
 
     showHelp();
@@ -1012,23 +1194,34 @@ void loop()
   pollFrequencyButton(freqUpButton, true, "UP");
   pollFrequencyButton(freqDownButton, false, "DOWN");
 
+  // IR монитор + далечинско - печати го секој прим код и го проверува мапирањето
+  if (IrReceiver.decode())
+  {
+    Serial.print("[IR] ");
+    IrReceiver.printIRResultShort(&Serial);
+    bool isRepeat = (IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT) != 0;
+    handleIrCommand(IrReceiver.decodedIRData.decodedRawData, isRepeat);
+    IrReceiver.resume();
+  }
+
   // 1. Контрола преку Serial Monitor
   if (Serial.available() > 0)
   {
     char key = Serial.read();
     switch (key)
     {
-    case '+': rx.setVolumeUp(); break;
-    case '-': rx.setVolumeDown(); break;
-    case 'U': case 'u': rx.setFrequencyUp(); resetStationName(); break;
-    case 'D': case 'd': rx.setFrequencyDown(); resetStationName(); break;
-    case 'S': Serial.println("Seeking UP..."); rx.seek(SI470X_SEEK_WRAP, SI470X_SEEK_UP); resetStationName(); break;
-    case 's': Serial.println("Seeking DOWN..."); rx.seek(SI470X_SEEK_WRAP, SI470X_SEEK_DOWN); resetStationName(); break;
+    case '+': rx.setVolumeUp(); drawVolumeBar(rx.getVolume()); markSettingsDirty(); break;
+    case '-': rx.setVolumeDown(); drawVolumeBar(rx.getVolume()); markSettingsDirty(); break;
+    case 'U': case 'u': rx.setFrequencyUp(); resetStationName(); markSettingsDirty(); break;
+    case 'D': case 'd': rx.setFrequencyDown(); resetStationName(); markSettingsDirty(); break;
+    case 'S': Serial.println("Seeking UP..."); rx.seek(SI470X_SEEK_WRAP, SI470X_SEEK_UP); resetStationName(); markSettingsDirty(); break;
+    case 's': Serial.println("Seeking DOWN..."); rx.seek(SI470X_SEEK_WRAP, SI470X_SEEK_DOWN); resetStationName(); markSettingsDirty(); break;
     case 'F': case 'f': scanBand("/fm_filter_on.txt", "ON"); break;
     case 'N': case 'n': scanBand("/fm_filter_off.txt", "OFF"); break;
     case 'T': case 't': setScanDateTime(); break;
     case 'L': case 'l': printSavedScans(); break;
     case 'R': case 'r': toggleTheme(); break;
+    case 'I': case 'i': irRawPinTest(); break;
     case '0': showStatus(); break;
     case '?': showHelp(); break;
     default: break;
@@ -1043,6 +1236,8 @@ void loop()
     rds_elapsed = millis();
   }
   drawRadioDisplay();
+  hideVolumeBarIfExpired();
+  saveSettingsIfDue();
   delay(5);
 }
 //завршено
