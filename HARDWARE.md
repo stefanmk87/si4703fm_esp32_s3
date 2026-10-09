@@ -18,11 +18,11 @@ Use the GPIO numbers below, not the header position numbers. Connect all grounds
 
 | Display pin | ESP32-S3 GPIO | Notes |
 |---|---:|---|
-| CS | GPIO10 | Chip select |
-| RST | GPIO9 | Display reset |
-| DC / RS | GPIO11 | Data / command select |
-| MOSI / SDI | GPIO13 | SPI data to display |
-| SCK / SCL | GPIO12 | SPI clock |
+| CS | GPIO1 | Chip select |
+| RST | GPIO2 | Display reset |
+| DC / RS | GPIO42 | Data / command select |
+| MOSI / SDI | GPIO41 | SPI data to display |
+| SCK / SCL | GPIO40 | SPI clock |
 | MISO / SDO | Not connected | TFT_eSPI is configured with `TFT_MISO=-1`; display reads are unused |
 | VCC | 3V3 | Check the display breakout's power requirements |
 | GND | GND | Common ground |
@@ -55,7 +55,7 @@ Used to control the radio with a salvaged remote instead of WiFi/Bluetooth (both
 - 10 µF electrolytic capacitor between VCC and GND, after the resistor (closest to the receiver).
 - 100 nF ceramic capacitor in parallel with the 10 µF, same two points.
 
-Keep the receiver and its wiring away from the MP2307 and the antenna, same rule as the other EMI-sensitive parts on this board (see [EMI_FILTER.md](EMI_FILTER.md)).
+Keep the receiver and its wiring away from the MP2307 and the antenna, same rule as the other EMI-sensitive parts on this board (see [emi_fitler.md](emi_fitler.md)).
 
 For wide-angle reception (not just pointed straight at it), mount the receiver with a clear, unobstructed view of the room rather than recessed in a narrow opening, and keep direct sunlight/fluorescent light off the lens (another common source of false IR triggers).
 
@@ -67,7 +67,7 @@ For wide-angle reception (not just pointed straight at it), mount the receiver w
 4. In `src/main.cpp`, find the six `constexpr uint32_t IR_CODE_...` constants near the top and paste the matching hex value (e.g. `IR_CODE_VOLUME_UP = 0xE718FF00;`) for each of the 6 actions.
 5. Rebuild and re-upload. Repeat presses (holding a button) work for Volume; Seek/Frequency ignore IR repeat frames so a held button does not run away.
 
-The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO13/12. These are separate buses. The firmware configures the display pins and ILI9341 driver through `platformio.ini` and initializes the screen in landscape mode (`setRotation(1)`).
+The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO41/12. These are separate buses. The firmware configures the display pins and ILI9341 driver through `platformio.ini` and initializes the screen in landscape mode (`setRotation(1)`).
 
 ## ASCII Wiring Diagram
 
@@ -78,11 +78,11 @@ The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO13/12. These are sep
  SI4703 SCL/SCLK |-----------------------| GPIO5
  SI4703 RST      |-----------------------| GPIO6
                  |                       |
- TFT CS          |-----------------------| GPIO10
- TFT RST         |-----------------------| GPIO9
- TFT DC / RS     |-----------------------| GPIO11
- TFT MOSI / SDI  |-----------------------| GPIO13
- TFT SCK         |-----------------------| GPIO12
+ TFT CS          |-----------------------| GPIO1
+ TFT RST         |-----------------------| GPIO2
+ TFT DC / RS     |-----------------------| GPIO42
+ TFT MOSI / SDI  |-----------------------| GPIO41
+ TFT SCK         |-----------------------| GPIO40
                  |                       |
  SI4703 VCC -----| 3V3                   |
  TFT VCC --------| 3V3 (if supported)   |

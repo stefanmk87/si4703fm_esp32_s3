@@ -33,7 +33,7 @@ Power the ESP32-S3 from the board's supported 5 V input (`5VCC` or `VIN`). The S
 
 For the IR receiver, verify the pin order of the salvaged part before connecting it. The current wiring uses a 100 Ω series resistor on VCC and 10 µF plus 100 nF capacitors in parallel between the filtered VCC node and GND, close to the receiver.
 
-See [HARDWARE.md](HARDWARE.md) for wiring details and [EMI_FILTER.md](EMI_FILTER.md) for the SI4703 power-filter notes.
+See [HARDWARE.md](HARDWARE.md) for wiring details and [emi_fitler.md](emi_fitler.md) for the power/EMI schematic.
 
 ## External Dipole Antenna
 
