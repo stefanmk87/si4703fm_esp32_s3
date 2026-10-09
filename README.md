@@ -2,6 +2,8 @@
 
 A portable FM radio project built around an ESP32-S3 and the Silicon Labs SI4703 receiver. It uses an ILI9341 TFT for station and RDS information, physical buttons and an IR remote for control, and SPIFFS for band-scan logs. Wi-Fi and Bluetooth are not required.
 
+![Assembled ESP32-S3 SI4703 FM radio showing the Classic display theme and RDS station information](IMG_20261004_115206.jpg)
+
 ## Features
 
 - FM reception across the European 87.5-108.0 MHz band, with 100 kHz tuning steps and 50 µs deemphasis.
