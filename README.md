@@ -37,7 +37,7 @@ See [HARDWARE.md](HARDWARE.md) for wiring details and [EMI_FILTER.md](EMI_FILTER
 
 ## External Dipole Antenna
 
-For improved reception with an external antenna, the matching **Si470x-Eval v1.1** board requires the hardware modification shown in [Si470x-Eval-v11_ant_mod.pdf](Si470x-Eval-v11_ant_mod.pdf). The drawing shows a 1 nF coupling capacitor (`C5`) in the external antenna feed to the SI4703 `ANT` input, plus a 270 nH inductor (`L1`) in the audio-jack ground path. In the PCB drawing, blue marks indicate cuts and purple marks indicate added solder connections. Follow the PDF's exact board-side routing before attaching the antenna.
+For improved reception with an external antenna, the matching **Si4703-external-antenna-mod.** board requires the hardware modification shown in [Si4703-external-antenna-mod.png](Si4703-external-antenna-mod.png). The drawing shows a 1 nF coupling capacitor (`C5`) in the external antenna feed to the SI4703 `ANT` input, plus a 270 nH inductor (`L1`) in the audio-jack ground path. In the PCB drawing, blue marks indicate cuts and purple marks indicate added solder connections. Follow the PDF's exact board-side routing before attaching the antenna.
 
 This modification is specific to the Si470x-Eval v1.1 layout. **Do not copy its trace cuts or solder points onto a different SI4703 breakout** unless that board has been checked against its own schematic. The PDF shows the receiver-board modification; it does not provide a universal balanced-dipole connector or matching network.
 
