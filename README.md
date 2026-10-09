@@ -23,6 +23,7 @@ A portable FM radio project built around an ESP32-S3 and the Silicon Labs SI4703
 | ESP32-S3 to SI4703 RESET | GPIO6 |
 | TFT MOSI / SCLK | GPIO41 / GPIO40 |
 | TFT CS / DC / RESET | GPIO1 / GPIO42 / GPIO2 |
+| TFT LED to 3.3V pin to MP2307 Voltage regulator| ==> This is the bacground light of ILI9341
 | Seek Up / Seek Down buttons | GPIO14 / GPIO15 to GND |
 | Frequency Up / Frequency Down buttons | GPIO16 / GPIO17 to GND |
 | VS1838B IR receiver OUT | GPIO18 |
