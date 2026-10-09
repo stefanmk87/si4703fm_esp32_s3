@@ -33,13 +33,13 @@ Power the ESP32-S3 from the board's supported 5 V input (`5VCC` or `VIN`). The S
 
 For the IR receiver, verify the pin order of the salvaged part before connecting it. The current wiring uses a 100 Ω series resistor on VCC and 10 µF plus 100 nF capacitors in parallel between the filtered VCC node and GND, close to the receiver.
 
-See [HARDWARE.md](HARDWARE.md) for wiring details and [emi_fitler.md](emi_fitler.md) for the power/EMI schematic.
+See [HARDWARE.md](HARDWARE.md) for wiring details and [emi_filter.png](emi_filter.png) for the power/EMI schematic.
 
 ## External Dipole Antenna
 
 For improved reception with an external antenna, the matching **Si4703-external-antenna-mod.** board requires the hardware modification shown in [Si4703-external-antenna-mod.png](Si4703-external-antenna-mod.png). The drawing shows a 1 nF coupling capacitor (`C5`) in the external antenna feed to the SI4703 `ANT` input, plus a 270 nH inductor (`L1`) in the audio-jack ground path. In the PCB drawing, blue marks indicate cuts and purple marks indicate added solder connections. Follow the PDF's exact board-side routing before attaching the antenna.
 
-This modification is specific to the Si470x-Eval v1.1 layout. **Do not copy its trace cuts or solder points onto a different SI4703 breakout** unless that board has been checked against its own schematic. The PDF shows the receiver-board modification; it does not provide a universal balanced-dipole connector or matching network.
+This modification is specific to the Si47003 modulelayout. **Do not copy its trace cuts or solder points onto a different SI4703 breakout** unless that board has been checked against its own schematic. The PDF shows the receiver-board modification; it does not provide a universal balanced-dipole connector or matching network.
 
 As a starting point for an FM half-wave dipole, make the two equal arms about a quarter wavelength each:
 

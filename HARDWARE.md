@@ -25,6 +25,7 @@ Use the GPIO numbers below, not the header position numbers. Connect all grounds
 | SCK / SCL | GPIO40 | SPI clock |
 | MISO / SDO | Not connected | TFT_eSPI is configured with `TFT_MISO=-1`; display reads are unused |
 | VCC | 3V3 | Check the display breakout's power requirements |
+| TFT LED | 3V3 | Backgrond Light of the display
 | GND | GND | Common ground |
 | LED / BL | Per display module | Connect as specified by the module; no ESP32 GPIO is assigned in firmware |
 
@@ -55,7 +56,7 @@ Used to control the radio with a salvaged remote instead of WiFi/Bluetooth (both
 - 10 µF electrolytic capacitor between VCC and GND, after the resistor (closest to the receiver).
 - 100 nF ceramic capacitor in parallel with the 10 µF, same two points.
 
-Keep the receiver and its wiring away from the MP2307 and the antenna, same rule as the other EMI-sensitive parts on this board (see [emi_fitler.md](emi_fitler.md)).
+Keep the receiver and its wiring away from the MP2307 and the antenna, same rule as the other EMI-sensitive parts on this board (see [emi_filter.png](emi_filter.png)).
 
 For wide-angle reception (not just pointed straight at it), mount the receiver with a clear, unobstructed view of the room rather than recessed in a narrow opening, and keep direct sunlight/fluorescent light off the lens (another common source of false IR triggers).
 
@@ -83,7 +84,7 @@ The SI4703 uses I2C on GPIO4/5. The display uses SPI on GPIO41/12. These are sep
  TFT DC / RS     |-----------------------| GPIO42
  TFT MOSI / SDI  |-----------------------| GPIO41
  TFT SCK         |-----------------------| GPIO40
-                 |                       |
+ TFT LED --- 3V3 |                       |
  SI4703 VCC -----| 3V3                   |
  TFT VCC --------| 3V3 (if supported)   |
  SI4703 GND -----| GND                   |
@@ -107,29 +108,6 @@ VS1838B GND -------------------------------+-----------------GND
                            +----+----+
                                 |
                                GND (same net as VS1838B GND above)
-
-##Или ако нема место на плоча стави ги овие GPIO за екранот
-
-TFT CS	        GPIO1	
-TFT RST	        GPIO2	
-TFT DC / RS 	GPIO42	
-TFT MOSI / SDI	GPIO41	
-TFT SCK / SCL	GPIO40	
-
-build_flags =
-    -DUSER_SETUP_LOADED
-    -DILI9341_DRIVER=ооо
-    -DTFT_MISO=-1
-    -DTFT_MOSI=41
-    -DTFT_SCLK=40
-    -DTFT_CS=1
-    -DTFT_DC=42
-    -DTFT_RST=2
-    -DLOAD_GLCD
-    -DLOAD_FONT2
-    -DLOAD_FONT4
-    -DLOAD_FONT7
-
 
 TFT MISO / SDO: not connected
 Buttons are normally open and active low. Pressing a button connects its GPIO to GND.
